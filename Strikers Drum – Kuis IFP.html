@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Strikers Drum – Kuis IFP</title>
+<style>
+:root{--bg:#0b1226;--card:#13203f;--tx:#f1f5ff;--mut:#9fb0d6;--pri:#fb923c;--bd:#2b3d6b;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0b1226;--card:#13203f;--tx:#f1f5ff}}
+:root[data-theme="dark"]{--bg:#0b1226;--card:#13203f;--tx:#f1f5ff}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--tx);font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;overflow:hidden;user-select:none;-webkit-user-select:none}
+#wrap{height:100%;display:flex;align-items:center;justify-content:center}
+canvas{touch-action:none;background:#0b1226;display:block}
+.ov{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(5,9,22,.88);padding:16px;overflow:auto}
+.ov[hidden]{display:none}
+.box{background:var(--card);border:2px solid var(--bd);border-radius:20px;padding:26px;max-width:640px;width:100%;text-align:center}
+h1{margin:0;font-size:2.2rem;color:var(--pri);letter-spacing:1px}
+p{color:var(--mut);margin:8px 0 16px}
+.nm{display:flex;align-items:center;gap:10px;margin:8px 0}
+.nm i{width:16px;height:16px;border-radius:50%;flex:none}
+input{flex:1;padding:12px;border-radius:10px;border:2px solid var(--bd);background:var(--bg);color:var(--tx);font:inherit;font-size:1.1rem}
+button{margin-top:16px;padding:14px 34px;border:0;border-radius:12px;background:var(--pri);color:#1a0f05;font:inherit;font-size:1.2rem;font-weight:800;cursor:pointer}
+#lg{display:flex;gap:8px;justify-content:center;margin:6px 0 12px}
+#lg button{margin:0;padding:10px 16px;font-size:1rem;background:var(--bg);color:var(--tx);border:2px solid var(--bd)}
+#lg button.sel{background:var(--pri);color:#1a0f05;border-color:var(--pri)}
+.rk{display:flex;justify-content:space-between;padding:12px 16px;margin:8px 0;border-radius:12px;background:var(--bg);font-size:1.25rem;font-weight:700}
+.rk.w{outline:3px solid var(--pri)}
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="c" width="1920" height="1080"></canvas></div>
+
+<div class="ov" id="menu"><div class="box">
+  <h1>✈ STRIKERS DRUM</h1>
+  <p>Kuis Pola Drum · 4 kelompok bermain bersamaan / 4 teams play together.<br>Geser pesawat, <b>tembak huruf jawaban yang benar</b>, hindari yang salah!<br>Move your plane, <b>shoot the correct answer letter</b>, dodge the wrong ones!</p>
+  <div id="lg"><button data-l="id" class="sel">Indonesia</button><button data-l="en">English</button><button data-l="both">ID + EN</button></div>
+  <div class="nm"><i style="background:#38bdf8"></i><input id="n0" value="Kelompok 1" maxlength="14"></div>
+  <div class="nm"><i style="background:#f472b6"></i><input id="n1" value="Kelompok 2" maxlength="14"></div>
+  <div class="nm"><i style="background:#a3e635"></i><input id="n2" value="Kelompok 3" maxlength="14"></div>
+  <div class="nm"><i style="background:#fbbf24"></i><input id="n3" value="Kelompok 4" maxlength="14"></div>
+  <button id="go">MULAI / START</button>
+</div></div>
+
+<div class="ov" id="end" hidden><div class="box">
+  <h1>🏆 MISI SELESAI / MISSION COMPLETE</h1><p id="ew"></p><div id="rk"></div>
+  <button id="again">Main Lagi / Play Again</button>
+</div></div>
+
+<script>
+const W=1920,H=1080,LW=480,PY=985,FAM='system-ui,Arial';
+const cv=document.getElementById('c'),x=cv.getContext('2d');
+const $=s=>document.querySelector(s);
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const shuf=a=>a.map(v=>[Math.random(),v]).sort((p,q)=>p[0]-q[0]).map(p=>p[1]);
+function fit(){const s=Math.min(innerWidth/W,innerHeight/H);cv.style.width=W*s+'px';cv.style.height=H*s+'px'}
+addEventListener('resize',fit);fit();
+
+/* audio */
+let ac;const A=()=>{ac=ac||new(window.AudioContext||window.webkitAudioContext)();if(ac.state==='suspended')ac.resume();return ac};
+function sw(f1,f2,d,p){try{const c=A(),t=c.currentTime,o=c.createOscillator(),g=c.createGain();o.frequency.setValueAtTime(f1,t);o.frequency.exponentialRampToValueAtTime(f2,t+d*.5);g.gain.setValueAtTime(p,t);g.gain.exponentialRampToValueAtTime(.001,t+d);o.connect(g);g.connect(c.destination);o.start(t);o.stop(t+d)}catch(e){}}
+const sOk=()=>{sw(500,900,.18,.35);sw(900,1300,.2,.25)},sBad=()=>sw(160,40,.35,.8),sHit=()=>sw(300,120,.08,.15);
+
+/* soal: [Indonesia, English, [[ID,EN] x4 (opsi pertama = benar)]] */
+const Q=[
+['Apa yang dimaksud dengan pola drum (drum pattern)?','What is a drum pattern?',[['Urutan bunyi drum yang diatur dalam ritme yang berulang','A sequence of drum sounds organized in a repeated rhythm'],['Daftar alat musik','A list of musical instruments'],['Melodi yang dimainkan di piano','A melody played on a piano'],['Kumpulan lirik lagu','A set of lyrics in a song']]],
+['Simbol apa yang umum dipakai untuk menggambarkan bunyi drum dalam pola sederhana?','Which symbols are commonly used to represent drum sounds in a simple pattern?',[['Huruf, not, atau simbol yang mewakili bunyi drum yang berbeda','Letters, notes, or symbols representing different drum sounds'],['Hanya warna dan bentuk','Colors and shapes only'],['Hanya persamaan matematika','Mathematical equations only'],['Kata-kata dari sebuah lagu','Words from a song']]],
+['Drum apa yang biasa dipakai untuk memainkan denyut utama dalam pola drum rock dasar?','Which drum is commonly used to play the main pulse in a basic rock drum pattern?',[['Bass drum','Bass drum'],['Triangle','Triangle'],['Tamborin','Tambourine'],['Recorder','Recorder']]],
+['Pada ketukan rock 4/4 dasar, snare drum biasanya dimainkan pada ketukan…','In a basic 4/4 rock beat, which beats commonly feature the snare drum?',[['Ketukan 2 dan 4','Beats 2 and 4'],['Ketukan 1 dan 3','Beats 1 and 3'],['Hanya setiap setengah ketukan','Every half beat only'],['Tidak ada ketukan','No beats']]],
+['Apa peran utama hi-hat dalam pola drum dasar?','What is the main role of the hi-hat in a basic drum pattern?',[['Menjaga denyut ritme yang stabil','To maintain a steady rhythmic pulse'],['Memainkan melodi utama','To play the main melody'],['Menggantikan semua alat musik','To replace every instrument'],['Membuat lirik lagu','To create musical lyrics']]],
+['Pola mana yang menunjukkan empat ketukan dengan jarak sama?','Which pattern represents four evenly spaced beats?',[['Boom — Boom — Boom — Boom —','Boom — Boom — Boom — Boom —'],['Boom — — —','Boom — — —'],['Boom — Boom —','Boom — Boom —'],['Boom Boom Boom Boom Boom Boom','Boom Boom Boom Boom Boom Boom']]],
+['Drummer memainkan bass drum pada ketukan 1 dan 3 serta snare pada ketukan 2 dan 4. Ini contoh dari…','A drummer plays the bass drum on beats 1 and 3 and the snare drum on beats 2 and 4. What is this an example of?',[['Groove drum dasar','A basic drum groove'],['Urutan melodi','A melodic sequence'],['Harmoni vokal','A vocal harmony'],['Tangga nada','A scale']]],
+['Apa yang sebaiknya dilakukan drummer agar pola drum tetap stabil?','What should a drummer do to keep a drum pattern steady?',[['Menghitung ketukan dan mendengarkan dengan saksama','Count the beats and listen carefully'],['Mengubah tempo setiap birama','Change the tempo every measure'],['Bermain sekeras mungkin','Play as loudly as possible'],['Mengabaikan pemain musik lainnya','Ignore the other musicians']]],
+['Teknik apa yang membantu drummer memainkan pukulan bergantian dengan akurat?','Which technique can help a drummer play alternating strokes accurately?',[['Berlatih pelan-pelan dengan tangan kanan dan kiri','Practicing slowly with the right and left hands'],['Hanya memakai tangan kanan','Using only the right hand'],['Memukul semua drum sekaligus','Hitting every drum at once'],['Bermain tanpa ketukan yang stabil','Playing without a steady beat']]],
+['Seorang siswa mengulang pola “Bass – Snare – Bass – Snare.” Konsep musik apa yang ditunjukkan?','A student repeats the pattern “Bass – Snare – Bass – Snare.” What musical concept does this demonstrate?',[['Pengulangan (repetisi)','Repetition'],['Hening','Silence'],['Melodi','Melody'],['Harmoni','Harmony']]],
+['Pola drum terdengar terlalu ramai. Perubahan apa yang paling mungkin memperbaikinya?','A drum pattern sounds too crowded. Which change would most likely improve it?',[['Menghilangkan pukulan yang tidak perlu dan menjaga denyut tetap jelas','Remove unnecessary hits and maintain a clear pulse'],['Menambah lebih banyak pukulan di setiap ketukan','Add more hits to every beat'],['Menaikkan volume semua drum','Increase the volume of every drum'],['Bermain secepat mungkin','Play as fast as possible']]],
+['Pola mana yang paling cocok untuk mengiringi lagu yang lambat?','Which pattern is most suitable for accompanying a slow song?',[['Pola sederhana yang stabil dengan tempo lambat','A steady, simple pattern played at a slow tempo'],['Pola sangat cepat dengan aksen acak','A very fast pattern with random accents'],['Pukulan keras terus-menerus pada semua drum','Continuous loud strikes on every drum'],['Pola tanpa denyut yang konsisten','A pattern with no consistent pulse']]],
+['Drummer ingin membuat pola berulang lebih menarik tanpa menghilangkan ritme utamanya. Apa yang harus dilakukan?','A drummer wants to make a repeated pattern more interesting while keeping its main rhythm recognizable. What should the drummer do?',[['Menambahkan variasi kecil atau fill di akhir frasa','Add a small variation or fill at the end of a phrase'],['Mengubah setiap ketukan secara acak','Change every beat randomly'],['Berhenti mengikuti tempo','Stop following the tempo'],['Menghilangkan bass drum sepenuhnya','Remove the bass drum completely']]],
+['Dua siswa memainkan pola drum yang sama, tetapi satu siswa makin cepat setiap kali pola diulang. Apa masalah utamanya?','Two students play the same drum pattern, but one student plays faster each time it repeats. What is the main problem?',[['Siswa itu tidak menjaga tempo yang konsisten','The student is not maintaining a consistent tempo'],['Siswa itu mengganti alat musik','The student is changing the instrument'],['Polanya memiliki terlalu banyak not','The pattern contains too many notes'],['Pola drum berubah menjadi melodi','The drum pattern has become a melody']]],
+['Kelompokmu membuat pola drum orisinal untuk pentas sekolah. Pendekatan terbaik?','Your group is creating an original drum pattern for a school performance. Which approach is best?',[['Memilih ketukan stabil, membagi peran drum, berlatih bersama, dan menyempurnakan pola','Choose a steady beat, assign drum roles, practice together, and refine the pattern'],['Membiarkan semua orang bermain acak bersamaan','Let everyone play randomly at the same time'],['Hanya memakai drum yang paling keras','Use only the loudest drum'],['Mengubah pola terus-menerus tanpa latihan','Change the pattern continuously without rehearsal']]]
+];
+const TX={soal:['SOAL','QUESTION'],jwb:['Jawaban','Answer'],out:['gugur','out'],gug:['GUGUR 💥','DOWN 💥'],salah:['salah!','wrong!'],nyawa:['−1 nyawa','−1 life'],lewat:['Terlewat!','Missed!'],cepat:['tercepat','fastest'],win:['Pemenang','Winner'],skor:['skor','score']};
+let lang='id';const T=k=>lang==='both'?TX[k][0]+' / '+TX[k][1]:TX[k][lang==='en'?1:0];
+
+/* state */
+const COL=['#38bdf8','#f472b6','#a3e635','#fbbf24'],LET='ABCD';
+let L=[],blocks=[],bullets=[],fx=[],scene='menu',r=0,order=[],cur,first,timer=0,bgy=0,bh=170,clouds=[];
+for(let i=0;i<9;i++)clouds.push({x:Math.random()*W,y:Math.random()*H,s:60+Math.random()*90});
+
+function wrap(t,mw){const w=t.split(' '),o=[];let s='';w.forEach(k=>{const n=s?s+' '+k:k;if(x.measureText(n).width>mw&&s){o.push(s);s=k}else s=n});o.push(s);return o}
+function layout(){
+  const ps=lang==='both'?[0,1]:[lang==='en'?1:0];
+  for(const fs of [34,30,27,25,23,21,19]){
+    const cm=[],lh=fs*1.25;let y=34;
+    ps.forEach(p=>{x.font=(p?'italic ':'bold ')+fs+'px '+FAM;wrap(cur.q[p],W-220).forEach(s=>{cm.push({t:s,x:W/2,y:y+fs,f:x.font,c:p?'#93c5fd':'#fff',a:'center'});y+=lh})});
+    y+=14;const ofs=Math.round(fs*.82),ol=ofs*1.25,cw=W/2-130,cells=[];
+    cur.opts.forEach((o,k)=>{const ls=[];ps.forEach(p=>{x.font=(p?'italic ':'bold ')+ofs+'px '+FAM;wrap((p===ps[0]?LET[k]+'.  ':'')+o.t[p],cw).forEach(s=>ls.push({t:s,f:x.font,c:p?'#93c5fd':'#fde68a'}))});cells.push(ls)});
+    const r0=Math.max(cells[0].length,cells[1].length)*ol,r1=Math.max(cells[2].length,cells[3].length)*ol;
+    cells.forEach((ls,k)=>{const yy=y+(k>>1?r0+10:0);ls.forEach((l,i)=>cm.push({t:l.t,x:k%2?W/2+50:90,y:yy+ofs+i*ol,f:l.f,c:l.c,a:'left'}))});
+    const h=y+r0+10+r1+16;
+    if(h<=450||fs===19){cur.cmds=cm;bh=h;return}
+  }
+}
+function initGame(){
+  L=[0,1,2,3].map(i=>({i,name:$('#n'+i).value.trim()||'Kelompok '+(i+1),col:COL[i],score:0,lives:3,px:i*LW+LW/2,tx:i*LW+LW/2,out:false,done:false,gain:0,inv:0,cd:0}));
+  order=shuf(Q.map((_,i)=>i));r=0;fx=[];startRound();
+}
+function startRound(){
+  const d=Q[order[r]];
+  cur={q:[d[0],d[1]],opts:shuf(d[2].map((t,j)=>({t,ok:j===0})))};
+  cur.ans=cur.opts.findIndex(o=>o.ok);layout();
+  first=false;blocks=[];bullets=[];
+  L.forEach(l=>{l.done=l.out;l.gain=0;
+    cur.opts.forEach((o,j)=>blocks.push({l:l.i,t:LET[j],ok:o.ok,x:l.i*LW+LW*(j+.5)/4,y:bh+195-Math.random()*60,w:100,h:96,hp:3,fl:0}))});
+  scene='play';
+}
+const speed=()=>46+r*3;
+const rect=b=>({a:b.x-b.w/2,b:b.y-b.h/2,c:b.x+b.w/2,d:b.y+b.h/2});
+const boom=(px,py,col)=>fx.push({k:'b',x:px,y:py,life:.5,col});
+const txt=(px,py,t,col)=>fx.push({k:'t',x:px,y:py,t,col,life:1.2});
+const clearLane=i=>{blocks=blocks.filter(b=>b.l!==i)};
+
+function update(dt){
+  bgy=(bgy+dt*120)%160;clouds.forEach(c=>{c.y+=dt*(60+c.s/2);if(c.y>H+100){c.y=-100;c.x=Math.random()*W}});
+  fx.forEach(f=>f.life-=dt);fx=fx.filter(f=>f.life>0);
+  if(scene==='fb'){timer-=dt;if(timer<=0){r++;if(r>=Q.length||L.every(l=>l.out))endGame();else startRound()}return}
+  if(scene!=='play')return;
+  L.forEach(l=>{l.px+=(l.tx-l.px)*Math.min(1,dt*12);l.inv-=dt;l.cd-=dt;
+    if(!l.out&&l.cd<=0){bullets.push({l:l.i,x:l.px,y:PY-40});l.cd=.2}});
+  bullets.forEach(b=>b.y-=1050*dt);bullets=bullets.filter(b=>b.y>bh+110);
+  blocks.forEach(b=>{b.y+=speed()*dt;b.fl-=dt});
+  for(const bu of bullets){
+    for(const bk of blocks){
+      if(bk.l!==bu.l||bk.dead)continue;const q=rect(bk);
+      if(bu.x>q.a&&bu.x<q.c&&bu.y>q.b&&bu.y<q.d){bu.y=-999;bk.hp--;bk.fl=.1;sHit();
+        if(bk.hp<=0){bk.dead=true;const l=L[bk.l];boom(bk.x,bk.y,bk.ok?'#a3e635':'#f87171');
+          if(bk.ok){const g=100+(first?0:50);first=true;l.score+=g;l.gain+=g;l.done=true;txt(bk.x,bk.y,'+'+g+(g>100?' ⚡ '+T('cepat'):''),'#a3e635');sOk();clearLane(l.i)}
+          else{l.score=Math.max(0,l.score-50);l.gain-=50;txt(bk.x,bk.y,'−50 '+T('salah'),'#f87171');sBad()}}
+        break}}}
+  blocks=blocks.filter(b=>!b.dead);
+  L.forEach(l=>{if(l.out)return;
+    for(const bk of blocks){if(bk.l!==l.i||bk.ok||bk.dead)continue;const q=rect(bk);
+      if(l.inv<=0&&q.d>PY-40&&q.b<PY+45&&q.a<l.px+50&&q.c>l.px-50){bk.dead=true;l.lives--;l.inv=1.3;boom(l.px,PY,'#fb923c');txt(l.px,PY-70,T('nyawa'),'#f87171');sBad();
+        if(l.lives<=0){l.out=true;l.done=true;clearLane(l.i);boom(l.px,PY,'#f87171');break}}}});
+  blocks=blocks.filter(b=>!b.dead);
+  blocks.forEach(b=>{if(b.y-b.h/2>H){b.dead=true;if(b.ok&&!L[b.l].done){const l=L[b.l];l.done=true;txt(l.i*LW+LW/2,PY-120,T('lewat'),'#fbbf24');clearLane(l.i)}}});
+  blocks=blocks.filter(b=>!b.dead);
+  if(L.every(l=>l.done)){scene='fb';timer=4;blocks=[];bullets=[]}
+}
+
+function plane(l){const px=l.px,py=PY;if(l.out)return;
+  if(l.inv>0&&Math.floor(l.inv*14)%2)return;
+  const P=[[0,-46],[12,-12],[56,18],[56,32],[16,22],[12,44],[26,54],[0,48]];
+  x.fillStyle=l.col;x.strokeStyle='#0b1226';x.lineWidth=3;x.beginPath();
+  P.forEach((p,i)=>i?x.lineTo(px+p[0],py+p[1]):x.moveTo(px+p[0],py+p[1]));
+  for(let i=P.length-1;i>=0;i--)x.lineTo(px-P[i][0],py+P[i][1]);
+  x.closePath();x.fill();x.stroke();
+  x.fillStyle='#e0f2fe';x.beginPath();x.ellipse(px,py-4,8,16,0,0,7);x.fill();
+  x.fillStyle='#fb923c';x.beginPath();x.moveTo(px-8,py+50);x.lineTo(px+8,py+50);x.lineTo(px,py+70+Math.random()*16);x.fill()}
+function draw(){
+  const hb=bh+110,F=(s,w)=>(w||'bold ')+s+'px '+FAM;
+  const g=x.createLinearGradient(0,0,0,H);g.addColorStop(0,'#0b1a3a');g.addColorStop(1,'#14407a');x.fillStyle=g;x.fillRect(0,0,W,H);
+  x.fillStyle='rgba(255,255,255,.07)';clouds.forEach(c=>{x.beginPath();x.ellipse(c.x,c.y,c.s*1.6,c.s*.6,0,0,7);x.fill()});
+  x.strokeStyle='rgba(255,255,255,.05)';x.lineWidth=2;for(let y=bgy-160;y<H;y+=160){x.beginPath();x.moveTo(0,y);x.lineTo(W,y);x.stroke()}
+  L.forEach(l=>{x.fillStyle=l.col+'14';x.fillRect(l.i*LW,hb,LW,H);
+    if(l.i){x.strokeStyle='rgba(255,255,255,.35)';x.setLineDash([18,14]);x.lineWidth=3;x.beginPath();x.moveTo(l.i*LW,hb);x.lineTo(l.i*LW,H);x.stroke();x.setLineDash([])}});
+  blocks.forEach(b=>{const q=rect(b);x.fillStyle=b.fl>0?'#fff':'#7c2d12';x.strokeStyle=L[b.l].col;x.lineWidth=4;
+    x.beginPath();x.roundRect(q.a,q.b,b.w,b.h,14);x.fill();x.stroke();
+    x.fillStyle='#fb923c';x.beginPath();x.moveTo(q.a-10,b.y);x.lineTo(q.a,b.y-20);x.lineTo(q.a,b.y+20);x.fill();x.beginPath();x.moveTo(q.c+10,b.y);x.lineTo(q.c,b.y-20);x.lineTo(q.c,b.y+20);x.fill();
+    x.fillStyle='#fde68a';x.fillRect(q.a+10,q.b+8,(b.w-20)*b.hp/3,6);
+    x.fillStyle=b.fl>0?'#7c2d12':'#fff';x.font=F(56);x.textAlign='center';x.textBaseline='middle';x.fillText(b.t,b.x,b.y+8)});
+  x.fillStyle='#fde047';bullets.forEach(b=>x.fillRect(b.x-4,b.y-14,8,28));
+  L.forEach(plane);
+  fx.forEach(f=>{if(f.k==='b'){const t=1-f.life/.5;x.strokeStyle=f.col;x.lineWidth=8*(1-t);x.beginPath();x.arc(f.x,f.y,20+t*90,0,7);x.stroke();x.fillStyle=f.col+'55';x.beginPath();x.arc(f.x,f.y,10+t*55,0,7);x.fill()}
+    else{x.globalAlpha=Math.min(1,f.life*2);x.fillStyle=f.col;x.font=F(38);x.textAlign='center';x.fillText(f.t,f.x,f.y-(1.2-f.life)*60);x.globalAlpha=1}});
+  /* banner + HUD */
+  x.fillStyle='rgba(6,12,32,.94)';x.fillRect(0,0,W,hb);x.textBaseline='alphabetic';
+  if(cur){x.textAlign='left';x.fillStyle='#fb923c';x.font=F(22);x.fillText(T('soal')+' '+(r+1)+' / '+Q.length,24,28);
+    cur.cmds.forEach(c=>{x.font=c.f;x.fillStyle=c.c;x.textAlign=c.a;x.fillText(c.t,c.x,c.y)})}
+  L.forEach(l=>{x.fillStyle=l.col;x.fillRect(l.i*LW,hb,LW,6);x.textAlign='left';x.font=F(30);
+    x.fillText(l.name,l.i*LW+22,bh+54);x.fillStyle='#f87171';x.font=F(30,'');x.fillText('♥'.repeat(l.lives)+'♡'.repeat(3-l.lives),l.i*LW+22,bh+96);
+    x.fillStyle='#fff';x.textAlign='right';x.font=F(52);x.fillText(l.score,l.i*LW+LW-22,bh+86);
+    if(l.out){x.fillStyle='rgba(0,0,0,.55)';x.fillRect(l.i*LW,hb+6,LW,H);x.fillStyle='#f87171';x.textAlign='center';x.font=F(38);x.fillText(T('gug'),l.i*LW+LW/2,(hb+PY)/2)}});
+  if(scene==='fb'){const py=hb+60,ph=PY-hb-170,o=cur.opts[cur.ans],ps=lang==='both'?[0,1]:[lang==='en'?1:0];
+    x.fillStyle='rgba(6,12,32,.95)';x.strokeStyle='#fb923c';x.lineWidth=5;x.beginPath();x.roundRect(200,py,1520,ph,24);x.fill();x.stroke();
+    x.textAlign='center';x.fillStyle='#a3e635';x.font=F(46);x.fillText(T('jwb')+': '+LET[cur.ans],W/2,py+66);
+    let yy=py+120;ps.forEach(p=>{x.font=F(34,p?'italic ':'bold ');x.fillStyle=p?'#93c5fd':'#fff';wrap(o.t[p],1380).forEach(s=>{x.fillText(s,W/2,yy);yy+=44})});
+    L.forEach(l=>{x.fillStyle=l.col;x.font=F(34);x.fillText(l.out?T('out'):(l.gain>=0?'+':'')+l.gain,l.i*LW+LW/2,py+ph-26)})}
+}
+function endGame(){
+  scene='end';const s=[...L].sort((a,b)=>b.score-a.score);
+  $('#ew').textContent=T('win')+': '+s[0].name+' — '+T('skor')+' '+s[0].score;
+  $('#rk').innerHTML=s.map((l,i)=>'<div class="rk'+(i?'':' w')+'"><span>'+['🥇','🥈','🥉','4️⃣'][i]+' '+l.name+'</span><span>'+l.score+'</span></div>').join('');
+  $('#end').hidden=false;
+}
+
+/* input */
+const own={};
+function pt(e){const rc=cv.getBoundingClientRect(),px=(e.clientX-rc.left)*W/rc.width,lane=clamp(Math.floor(px/LW),0,3);
+  if(e.type==='pointerdown'){own[e.pointerId]=lane;try{cv.setPointerCapture(e.pointerId)}catch(_){}}
+  const li=e.pointerType==='mouse'?lane:own[e.pointerId];if(li==null||!L[li])return;
+  L[li].tx=clamp(px,li*LW+60,li*LW+LW-60)}
+cv.addEventListener('pointerdown',pt);cv.addEventListener('pointermove',pt);
+['pointerup','pointercancel'].forEach(t=>cv.addEventListener(t,e=>{delete own[e.pointerId]}));
+document.querySelectorAll('#lg button').forEach(b=>b.onclick=()=>{lang=b.dataset.l;document.querySelectorAll('#lg button').forEach(k=>k.classList.toggle('sel',k===b))});
+$('#go').onclick=()=>{A();$('#menu').hidden=true;initGame()};
+$('#again').onclick=()=>{$('#end').hidden=true;$('#menu').hidden=false;scene='menu'};
+
+let last=performance.now();
+(function loop(n){const dt=Math.min(.05,(n-last)/1000);last=n;update(dt);draw();requestAnimationFrame(loop)})(last);
+</script>
+</body>
+</html>
